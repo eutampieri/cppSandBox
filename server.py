@@ -2,8 +2,8 @@
 from os import geteuid, path, chdir
 import subprocess
 from shutil import copy2
-from json import dumps
-from uuid import uuid4
+from json import dumps, loads
+#from uuid import uuid4
 try:
     from flask import Flask, request
 except ImportError:
@@ -21,39 +21,46 @@ if not path.isfile("isolate/isolate"):
 if not path.isfile("/usr/local/etc/isolate"):
     copy2("isolate/default.cf", "/usr/local/etc/isolate")
 subprocess.call("isolate/isolate --cleanup", shell=True)
-isolateSandBox = subprocess.Popen("./isolate/isolate --init", shell=True, stdout=subprocess.PIPE).stdout.read().replace("\n",'')
+isolate_sandbox = subprocess.Popen("./isolate/isolate --init", shell=True, stdout=subprocess.PIPE).stdout.read().replace("\n", '')
 app = Flask(__name__)
 @app.route('/')
 def hello_world():
     """Home page"""
     return '<h1>Sandbox backend</h1>'
-@app.route('/run', methods = ['GET', 'POST'])
+@app.route('/run', methods=['GET', 'POST'])
 def esegui():
-    global isolateSandBox
     """Run code with input and return output"""
-    if request.method=="GET":
+    global isolate_sandbox
+    if not request.method == "POST":
         return """
+    <h1>Invalid request</h1>
     <form method="POST" action="run">
     <textarea name="code"></textarea><br>
     <textarea name="input"></textarea><br>
+    Time: <input type="text" name="time"><br>
+    Mem: <input type="text" name="memory"><br>
     <input type="submit">
     """
-        return "<h1>Invalid request</h1>"
-    f=open(isolateSandBox+"/box/run.cpp",'w')
-    f.write(request.form["code"])
-    f.close()
-    f=open(isolateSandBox+"/box/input.txt",'w')
-    f.write(request.form["input"])
-    f.close()
-    compil=subprocess.Popen("cd "+isolateSandBox+"/box&&g++ -std=c++0x run.cpp", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    file_write = open(isolate_sandbox+"/box/run.cpp", 'w')
+    file_write.write(request.form["code"])
+    file_write.close()
+    file_write = open(isolate_sandbox+"/box/input.txt", 'w')
+    file_write.write(request.form["input"])
+    file_write.close()
+    compil=subprocess.Popen("cd "+isolate_sandbox+"/box&&g++ -std=c++0x run.cpp", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     compil.wait()
     compOut = compil.stderr.read()
     if not compOut=="":
         return dumps([False, compOut])
-    res=subprocess.Popen("./isolate/isolate --run a.out -t 1 -w 3 -m 50000 < "+isolateSandBox+"/box/input.txt > "+isolateSandBox+"/box/output.txt", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time = float(request.form["time"])
+    memory = int(float(request.form["memory"])*1000)
+    res = subprocess.Popen("./isolate/isolate --run a.out -t "
+                           "" + str(time) + " -w " + str(3*time) + " -m " + str(memory) + " <"
+                           " "+isolate_sandbox+"/box/input.txt > "+isolate_sandbox+"/box/output"
+                           ".txt", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     res.wait()
-    execRes=open(isolateSandBox+"/box/output.txt",'r').read()
+    exec_res = open(isolate_sandbox+"/box/output.txt", 'r').read()
     subprocess.call("isolate/isolate --cleanup", shell=True)
-    isolateSandBox = subprocess.Popen("./isolate/isolate --init", shell=True, stdout=subprocess.PIPE).stdout.read().replace("\n",'')
-    return dumps([True, execRes, res.stderr.read()])
-app.run(host='0.0.0.0', port=19563)
+    isolate_sandbox = subprocess.Popen("./isolate/isolate --init", shell=True, stdout=subprocess.PIPE).stdout.read().replace("\n", '')
+    return dumps({"output":exec_res, "exit_status":res.stderr.read()})
+app.run(host='0.0.0.0', port=loads(open("config.json").read())["port"], debug=True)
