@@ -51,7 +51,7 @@ def esegui():
     compil.wait()
     compOut = compil.stderr.read()
     if not compOut=="":
-        return dumps([False, compOut])
+        return dumps({"compilation":False, "error":compOut})
     time = float(request.form["time"])
     memory = int(float(request.form["memory"])*1000)
     res = subprocess.Popen("./isolate/isolate --run a.out -t "
@@ -62,5 +62,5 @@ def esegui():
     exec_res = open(isolate_sandbox+"/box/output.txt", 'r').read()
     subprocess.call("isolate/isolate --cleanup", shell=True)
     isolate_sandbox = subprocess.Popen("./isolate/isolate --init", shell=True, stdout=subprocess.PIPE).stdout.read().replace("\n", '')
-    return dumps({"output":exec_res, "exit_status":res.stderr.read()})
+    return dumps({"compilation":True, "output":exec_res, "exit_status":res.stderr.read()})
 app.run(host='0.0.0.0', port=loads(open("config.json").read())["port"], debug=True)
